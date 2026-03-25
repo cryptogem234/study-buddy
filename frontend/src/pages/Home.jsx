@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getSessions, getProgressSummary, getTopics } from "../api.js";
 
-const STUDENT_NAME = "Sophia";
+const STUDENT_NAME = "Aashi";
 
 const SUBJECTS = [
   { key: "English", emoji: "📚", color: "#6366f1", bg: "#eef2ff",

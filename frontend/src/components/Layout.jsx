@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 
-const STUDENT_NAME = "Sophia";
+const STUDENT_NAME = "Aashi";
 
 const navItems = [
   { to: "/",            label: "Home",         emoji: "🏠", end: true },
