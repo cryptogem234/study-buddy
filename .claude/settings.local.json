@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/shgga/PycharmProjects/study-buddy/frontend/src -type f \\\\\\(-name *.js -o -name *.jsx -o -name *.json \\\\\\))"
+    ]
+  }
+}
