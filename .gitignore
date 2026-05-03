@@ -1,7 +1,7 @@
 venv/
 __pycache__/
 *.pyc
-backend/study_buddy.db
+# backend/study_buddy.db
 backend/.env
 node_modules/
 dist/
