@@ -1,130 +1,121 @@
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import datetime, timedelta
-from pydantic import BaseModel
-from typing import Optional
-
+from sqlalchemy.orm import Session
 from database import get_db
-from models import QuizSession, Answer
+from models import Subject, Topic, Lesson, Question, LessonProgress, QuizAttempt
+from schemas import QuizAttemptIn, QuizAttemptOut, ProgressSummary, SubjectProgress, TopicProgress
 
-router = APIRouter()
-
-
-class ProgressSummary(BaseModel):
-    total_questions_answered: int
-    overall_accuracy: float
-    total_sessions: int
-    current_streak: int
+router = APIRouter(tags=["progress"])
 
 
-class SubjectBreakdown(BaseModel):
-    subject: str
-    total_questions: int
-    correct: int
-    accuracy: float
+def calc_streak(db: Session) -> int:
+    quiz_dates = db.query(func.date(QuizAttempt.attempted_at)).distinct().all()
+    lesson_dates = db.query(func.date(LessonProgress.completed_at)).distinct().all()
 
+    all_dates: set[date] = set()
+    for (d,) in quiz_dates:
+        all_dates.add(d if isinstance(d, date) else date.fromisoformat(str(d)))
+    for (d,) in lesson_dates:
+        all_dates.add(d if isinstance(d, date) else date.fromisoformat(str(d)))
 
-class ChartPoint(BaseModel):
-    date: str
-    score: float
-    sessions: int
+    if not all_dates:
+        return 0
 
+    today = date.today()
+    sorted_dates = sorted(all_dates, reverse=True)
 
-@router.get("/progress/summary", response_model=ProgressSummary)
-def get_summary(db: Session = Depends(get_db)):
-    answers = db.query(Answer).all()
-    total = len(answers)
-    correct = sum(1 for a in answers if a.is_correct)
-    accuracy = round((correct / total * 100), 1) if total > 0 else 0.0
+    if sorted_dates[0] < today - timedelta(days=1):
+        return 0
 
-    completed_sessions = (
-        db.query(QuizSession)
-        .filter(QuizSession.completed_at.isnot(None))
-        .order_by(QuizSession.completed_at.desc())
-        .all()
-    )
-    total_sessions = len(completed_sessions)
-
-    # Calculate streak: consecutive days with at least one completed session
-    streak = 0
-    if completed_sessions:
-        today = datetime.utcnow().date()
-        check_date = today
-        session_dates = set(s.completed_at.date() for s in completed_sessions if s.completed_at)
-
-        # Allow streak to start from today or yesterday
-        if check_date not in session_dates:
-            check_date -= timedelta(days=1)
-
-        while check_date in session_dates:
+    streak = 1
+    for i in range(len(sorted_dates) - 1):
+        if sorted_dates[i] - sorted_dates[i + 1] == timedelta(days=1):
             streak += 1
-            check_date -= timedelta(days=1)
+        else:
+            break
+    return streak
 
+
+def topic_status(topic, db: Session) -> tuple[str, float | None, int]:
+    attempts = db.query(QuizAttempt).filter(QuizAttempt.topic_id == topic.id).all()
+    completed_ids = {
+        lp.lesson_id
+        for lp in db.query(LessonProgress).filter(LessonProgress.topic_id == topic.id).all()
+    }
+    has_questions = db.query(Question).filter(Question.topic_id == topic.id).count() > 0
+    best = max((a.score / a.total * 100 for a in attempts), default=None)
+
+    has_activity = len(completed_ids) > 0 or len(attempts) > 0
+    if not has_activity:
+        return "not_started", best, len(completed_ids)
+
+    lessons_done = len(topic.lessons) == 0 or len(completed_ids) >= len(topic.lessons)
+    quiz_passed = any(a.score / a.total >= 0.7 for a in attempts) if attempts else False
+    if lessons_done and (quiz_passed or not has_questions):
+        return "completed", best, len(completed_ids)
+    return "in_progress", best, len(completed_ids)
+
+
+@router.post("/quiz-attempts", response_model=QuizAttemptOut)
+def save_quiz_attempt(body: QuizAttemptIn, db: Session = Depends(get_db)):
+    attempt = QuizAttempt(topic_id=body.topic_id, score=body.score, total=body.total)
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt
+
+
+@router.get("/progress", response_model=ProgressSummary)
+def get_progress(db: Session = Depends(get_db)):
+    attempts = db.query(QuizAttempt).order_by(QuizAttempt.attempted_at.desc()).all()
+    avg_score = (
+        sum(a.score / a.total * 100 for a in attempts) / len(attempts)
+        if attempts else None
+    )
     return ProgressSummary(
-        total_questions_answered=total,
-        overall_accuracy=accuracy,
-        total_sessions=total_sessions,
-        current_streak=streak,
+        total_subjects=db.query(Subject).count(),
+        total_topics=db.query(Topic).count(),
+        total_lessons=db.query(Lesson).count(),
+        lessons_completed=db.query(LessonProgress).count(),
+        quizzes_taken=len(attempts),
+        average_score=avg_score,
+        current_streak=calc_streak(db),
+        recent_attempts=[QuizAttemptOut.model_validate(a) for a in attempts[:10]],
     )
 
 
-@router.get("/progress/by-subject", response_model=list[SubjectBreakdown])
-def get_by_subject(db: Session = Depends(get_db)):
-    sessions = db.query(QuizSession).filter(QuizSession.completed_at.isnot(None)).all()
-
-    subject_map: dict[str, dict] = {}
-    for session in sessions:
-        subj = session.subject
-        if subj not in subject_map:
-            subject_map[subj] = {"total": 0, "correct": 0}
-        for answer in session.answers:
-            subject_map[subj]["total"] += 1
-            if answer.is_correct:
-                subject_map[subj]["correct"] += 1
-
+@router.get("/progress/subjects", response_model=list[SubjectProgress])
+def get_subject_progress(db: Session = Depends(get_db)):
+    subjects = db.query(Subject).order_by(Subject.grade).all()
     result = []
-    for subj, data in subject_map.items():
-        total = data["total"]
-        correct = data["correct"]
-        result.append(
-            SubjectBreakdown(
-                subject=subj,
-                total_questions=total,
-                correct=correct,
-                accuracy=round((correct / total * 100), 1) if total > 0 else 0.0,
-            )
-        )
-    return result
-
-
-@router.get("/progress/chart", response_model=list[ChartPoint])
-def get_chart(db: Session = Depends(get_db)):
-    since = datetime.utcnow() - timedelta(days=30)
-    sessions = (
-        db.query(QuizSession)
-        .filter(
-            QuizSession.completed_at.isnot(None),
-            QuizSession.completed_at >= since,
-        )
-        .all()
-    )
-
-    daily: dict[str, dict] = {}
-    for session in sessions:
-        if not session.completed_at or not session.total_questions:
-            continue
-        date_str = session.completed_at.date().isoformat()
-        if date_str not in daily:
-            daily[date_str] = {"total_score": 0, "total_possible": 0, "sessions": 0}
-        daily[date_str]["total_score"] += session.score or 0
-        daily[date_str]["total_possible"] += session.total_questions
-        daily[date_str]["sessions"] += 1
-
-    result = []
-    for date_str in sorted(daily.keys()):
-        d = daily[date_str]
-        pct = round((d["total_score"] / d["total_possible"] * 100), 1) if d["total_possible"] > 0 else 0.0
-        result.append(ChartPoint(date=date_str, score=pct, sessions=d["sessions"]))
-
+    for s in subjects:
+        topics = db.query(Topic).filter(Topic.subject_id == s.id).order_by(Topic.order).all()
+        topic_list = []
+        completed = 0
+        for t in topics:
+            status, best, lessons_done = topic_status(t, db)
+            if status == "completed":
+                completed += 1
+            q_count = db.query(Question).filter(Question.topic_id == t.id).count()
+            topic_list.append(TopicProgress(
+                topic_id=t.id,
+                topic_name=t.name,
+                unit=t.unit,
+                term=t.term,
+                status=status,
+                best_score=best,
+                lessons_completed=lessons_done,
+                lesson_count=len(t.lessons),
+                question_count=q_count,
+            ))
+        result.append(SubjectProgress(
+            subject_id=s.id,
+            subject_name=s.name,
+            grade=s.grade,
+            icon=s.icon,
+            topics=topic_list,
+            completed_count=completed,
+            total_count=len(topics),
+        ))
     return result

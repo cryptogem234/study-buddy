@@ -1,213 +1,137 @@
-import React, { useEffect, useState } from "react";
-import { getProgressSummary, getProgressBySubject, getProgressChart, getTopics } from "../api.js";
-import ProgressChart from "../components/ProgressChart.jsx";
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api } from '../api'
 
-const MASTERY_STYLES = {
-  mastered:    { bg: "#d1fae5", color: "#065f46", label: "Mastered",    bar: "#10b981", pct: 100 },
-  proficient:  { bg: "#dbeafe", color: "#1e40af", label: "Proficient",  bar: "#6366f1", pct: 75 },
-  developing:  { bg: "#fef3c7", color: "#92400e", label: "Developing",  bar: "#f59e0b", pct: 45 },
-  beginner:    { bg: "#f1f5f9", color: "#475569", label: "Beginner",    bar: "#94a3b8", pct: 15 },
-  not_started: { bg: "#f8fafc", color: "#cbd5e1", label: "Not Started", bar: "#e2e8f0", pct: 0 },
-};
-
-function StatPill({ emoji, label, value, color }) {
-  return (
-    <div style={{ background: "#fff", borderRadius: 14, padding: "20px 24px", border: "1px solid #e2e8f0", flex: 1, minWidth: 140, display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: 26 }}>{emoji}</span>
-      <span style={{ fontSize: 26, fontWeight: 800, color: color || "#0f172a" }}>{value}</span>
-      <span style={{ fontSize: 13, color: "#64748b" }}>{label}</span>
-    </div>
-  );
+const STATUS_STYLE = {
+  completed:   { dot: 'bg-green-400',  text: 'text-green-600',  label: 'Done' },
+  in_progress: { dot: 'bg-amber-400',  text: 'text-amber-600',  label: 'In Progress' },
+  not_started: { dot: 'bg-slate-300',  text: 'text-slate-400',  label: 'Not Started' },
 }
 
-function MasteryRow({ topic, mastery_level, accuracy, total_attempts, needs_review }) {
-  const s = MASTERY_STYLES[mastery_level] || MASTERY_STYLES.not_started;
-  return (
-    <tr style={{ borderTop: "1px solid #f1f5f9" }}>
-      <td style={{ padding: "12px 20px", fontSize: 14, color: "#0f172a", fontWeight: 500 }}>
-        {needs_review && <span style={{ background: "#fef2f2", color: "#ef4444", borderRadius: 5, padding: "1px 6px", fontSize: 10, fontWeight: 700, marginRight: 7 }}>REVIEW</span>}
-        {topic}
-      </td>
-      <td style={{ padding: "12px 20px" }}>
-        <span style={{ background: s.bg, color: s.color, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>
-          {s.label}
-        </span>
-      </td>
-      <td style={{ padding: "12px 20px", fontSize: 14, color: "#64748b" }}>{total_attempts}</td>
-      <td style={{ padding: "12px 20px" }}>
-        {total_attempts > 0 ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 99, overflow: "hidden", minWidth: 80 }}>
-              <div style={{ height: "100%", width: `${accuracy}%`, background: s.bar, borderRadius: 99, transition: "width 0.4s" }} />
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: s.color, minWidth: 36 }}>{accuracy}%</span>
-          </div>
-        ) : (
-          <span style={{ fontSize: 12, color: "#cbd5e1" }}>—</span>
-        )}
-      </td>
-    </tr>
-  );
+function fmt(dt) {
+  return new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export default function Progress() {
-  const [summary, setSummary]   = useState(null);
-  const [bySubject, setBySubject] = useState([]);
-  const [chartData, setChartData] = useState([]);
-  const [topics, setTopics]     = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [activeTab, setActiveTab] = useState("English");
+  const navigate = useNavigate()
+  const [summary, setSummary] = useState(null)
+  const [subjects, setSubjects] = useState([])
+  const [expanded, setExpanded] = useState({})
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getProgressSummary(), getProgressBySubject(), getProgressChart(), getTopics()])
-      .then(([sum, subj, chart, topicList]) => {
-        setSummary(sum);
-        setBySubject(subj);
-        setChartData(chart);
-        setTopics(topicList);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+    Promise.all([api.getProgress(), api.getSubjectProgress()])
+      .then(([s, sp]) => { setSummary(s); setSubjects(sp) })
+      .finally(() => setLoading(false))
+  }, [])
 
-  if (loading) {
-    return <div style={{ textAlign: "center", paddingTop: 80, color: "#64748b" }}>Loading progress...</div>;
-  }
+  if (loading) return <div className="text-center py-20 text-slate-400">Loading...</div>
 
-  const subjectTopics = topics.filter((t) => t.subject.toLowerCase() === activeTab.toLowerCase());
-  const masteredCount = subjectTopics.filter((t) => t.mastery_level === "mastered").length;
-  const reviewCount   = subjectTopics.filter((t) => t.needs_review).length;
+  const avgPct = summary?.average_score != null ? Math.round(summary.average_score) : null
 
   return (
     <div>
-      <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>My Progress</h1>
-      <p style={{ fontSize: 14, color: "#64748b", marginBottom: 28 }}>Track your learning journey over time.</p>
+      <h1 className="text-2xl font-bold text-slate-800 mb-6">Your Progress</h1>
 
-      {/* Stats */}
-      {summary && (
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 36 }}>
-          <StatPill emoji="📝" label="Questions Answered" value={summary.total_questions_answered} />
-          <StatPill emoji="🎯" label="Overall Accuracy" value={`${summary.overall_accuracy}%`} color={summary.overall_accuracy >= 70 ? "#10b981" : "#ef4444"} />
-          <StatPill emoji="🔥" label="Study Streak" value={`${summary.current_streak}d`} color="#f59e0b" />
-          <StatPill emoji="🏁" label="Quizzes Completed" value={summary.total_sessions} />
-        </div>
-      )}
-
-      {/* Chart */}
-      <div style={{ background: "#fff", borderRadius: 16, padding: "24px 24px 16px", border: "1px solid #e2e8f0", marginBottom: 28, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 20 }}>Daily Score — Last 30 Days</h2>
-        <ProgressChart data={chartData} />
-      </div>
-
-      {/* Subject summary table */}
-      <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)", marginBottom: 28 }}>
-        <div style={{ padding: "18px 24px", borderBottom: "1px solid #f1f5f9", fontSize: 16, fontWeight: 700, color: "#0f172a" }}>
-          Breakdown by Subject
-        </div>
-        {bySubject.length === 0 ? (
-          <div style={{ padding: "32px 24px", color: "#94a3b8", fontSize: 14, textAlign: "center" }}>
-            Complete a quiz to see your subject breakdown.
+      {/* Top stat cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        {[
+          { label: 'Study Streak',   value: summary?.current_streak > 0 ? `${summary.current_streak} days` : '—', icon: '🔥' },
+          { label: 'Lessons Read',   value: `${summary?.lessons_completed ?? 0}/${summary?.total_lessons ?? 0}`, icon: '📖' },
+          { label: 'Quizzes Taken',  value: summary?.quizzes_taken ?? 0, icon: '🧪' },
+          { label: 'Avg Score',      value: avgPct != null ? `${avgPct}%` : '—', icon: avgPct >= 80 ? '🌟' : avgPct >= 60 ? '👍' : '💪' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-5 text-center shadow-sm">
+            <div className="text-3xl mb-1">{s.icon}</div>
+            <div className="text-2xl font-bold text-slate-800">{s.value}</div>
+            <div className="text-xs text-slate-500 mt-1">{s.label}</div>
           </div>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#f8fafc" }}>
-                {["Subject", "Questions", "Correct", "Accuracy"].map((h) => (
-                  <th key={h} style={{ padding: "12px 24px", fontSize: 12, fontWeight: 600, color: "#64748b", textAlign: "left", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bySubject.map((row, i) => (
-                <tr key={row.subject} style={{ borderTop: "1px solid #f1f5f9", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ padding: "14px 24px", fontWeight: 600, fontSize: 14, color: "#0f172a" }}>
-                    {row.subject === "English" ? "📚 " : "🔬 "}{row.subject}
-                  </td>
-                  <td style={{ padding: "14px 24px", fontSize: 14, color: "#64748b" }}>{row.total_questions}</td>
-                  <td style={{ padding: "14px 24px", fontSize: 14, color: "#64748b" }}>{row.correct}</td>
-                  <td style={{ padding: "14px 24px" }}>
-                    <span style={{ background: row.accuracy >= 70 ? "#d1fae5" : "#fee2e2", color: row.accuracy >= 70 ? "#065f46" : "#991b1b", borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 700 }}>
-                      {row.accuracy}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        ))}
       </div>
 
-      {/* Per-topic mastery skill tree */}
-      {topics.length > 0 && (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-          {/* tab header */}
-          <div style={{ display: "flex", borderBottom: "1px solid #f1f5f9" }}>
-            {["English", "Science"].map((subj) => (
+      {/* Per-subject topic breakdown */}
+      <h2 className="text-lg font-semibold text-slate-700 mb-4">Topics by Subject</h2>
+      <div className="space-y-4 mb-8">
+        {subjects.map(subj => {
+          const isOpen = expanded[subj.subject_id] ?? false
+          const pct = subj.total_count > 0 ? Math.round((subj.completed_count / subj.total_count) * 100) : 0
+
+          return (
+            <div key={subj.subject_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              {/* Subject header — clickable to expand */}
               <button
-                key={subj}
-                onClick={() => setActiveTab(subj)}
-                style={{
-                  flex: 1, padding: "16px 24px", border: "none", background: "none", cursor: "pointer",
-                  fontSize: 15, fontWeight: 700,
-                  color: activeTab === subj ? "#6366f1" : "#94a3b8",
-                  borderBottom: activeTab === subj ? "2px solid #6366f1" : "2px solid transparent",
-                  transition: "all 0.15s",
-                }}
+                onClick={() => setExpanded(e => ({ ...e, [subj.subject_id]: !isOpen }))}
+                className="w-full flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors text-left"
               >
-                {subj === "English" ? "📚 " : "🔬 "}{subj}
+                <span className="text-2xl">{subj.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-slate-800">{subj.subject_name}</div>
+                  <div className="text-xs text-slate-400">Grade {subj.grade} · {subj.completed_count}/{subj.total_count} topics complete</div>
+                  <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden w-full">
+                    <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                <div className="text-lg font-bold text-slate-600">{pct}%</div>
+                <span className="text-slate-400 ml-1">{isOpen ? '▲' : '▼'}</span>
               </button>
-            ))}
-          </div>
 
-          {/* mastery summary badges */}
-          {subjectTopics.length > 0 && (
-            <div style={{ padding: "16px 20px", background: "#fafafa", borderBottom: "1px solid #f1f5f9", display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {["mastered","proficient","developing","beginner","not_started"].map((lvl) => {
-                const count = subjectTopics.filter((t) => t.mastery_level === lvl || (!t.total_attempts && lvl === "not_started")).length;
-                const s = MASTERY_STYLES[lvl];
-                if (count === 0) return null;
-                return (
-                  <span key={lvl} style={{ background: s.bg, color: s.color, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>
-                    {s.label}: {count}
-                  </span>
-                );
-              })}
-              {reviewCount > 0 && (
-                <span style={{ background: "#fef2f2", color: "#ef4444", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700 }}>
-                  Needs Review: {reviewCount}
-                </span>
+              {/* Topic list */}
+              {isOpen && (
+                <div className="border-t border-slate-100 divide-y divide-slate-50">
+                  {subj.topics.map(t => {
+                    const s = STATUS_STYLE[t.status] ?? STATUS_STYLE.not_started
+                    return (
+                      <div key={t.topic_id} className="flex items-center gap-3 px-6 py-3 hover:bg-slate-50 cursor-pointer"
+                        onClick={() => navigate(`/topics/${t.topic_id}/lesson`)}>
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-700 truncate">{t.topic_name}</p>
+                          <p className="text-xs text-slate-400">Term {t.term} · {t.unit}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {t.best_score != null && (
+                            <span className={`text-xs font-semibold ${
+                              t.best_score >= 80 ? 'text-green-600' : t.best_score >= 60 ? 'text-amber-600' : 'text-red-400'
+                            }`}>
+                              {Math.round(t.best_score)}%
+                            </span>
+                          )}
+                          <span className={`text-xs font-medium ${s.text}`}>{s.label}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
-          )}
+          )
+        })}
+      </div>
 
-          {subjectTopics.length === 0 ? (
-            <div style={{ padding: "32px 24px", color: "#94a3b8", fontSize: 14, textAlign: "center" }}>
-              Start a {activeTab} quiz to see topic mastery.
-            </div>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  {["Topic", "Level", "Attempts", "Accuracy"].map((h) => (
-                    <th key={h} style={{ padding: "12px 20px", fontSize: 12, fontWeight: 600, color: "#64748b", textAlign: "left", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {subjectTopics
-                  .sort((a, b) => {
-                    const order = { needs_review: 0, not_started: 1, beginner: 2, developing: 3, proficient: 4, mastered: 5 };
-                    const aKey = a.needs_review ? "needs_review" : a.mastery_level;
-                    const bKey = b.needs_review ? "needs_review" : b.mastery_level;
-                    return (order[aKey] ?? 3) - (order[bKey] ?? 3);
-                  })
-                  .map((t) => <MasteryRow key={t.topic} {...t} />)
-                }
-              </tbody>
-            </table>
-          )}
+      {/* Recent quiz history */}
+      {summary?.recent_attempts?.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-700">Recent Quizzes</h2>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {summary.recent_attempts.map(a => {
+              const pct = Math.round((a.score / a.total) * 100)
+              return (
+                <li key={a.id} className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-slate-700">{a.score}/{a.total} correct</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{fmt(a.attempted_at)}</div>
+                  </div>
+                  <span className={`text-lg font-bold ${pct >= 80 ? 'text-green-500' : pct >= 60 ? 'text-yellow-500' : 'text-red-400'}`}>
+                    {pct}%
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
     </div>
-  );
+  )
 }

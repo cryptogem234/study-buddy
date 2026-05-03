@@ -1,285 +1,196 @@
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { getLesson, getMastery } from "../api.js";
+import { useEffect, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import { api } from '../api'
 
-const MASTERY = {
-  mastered:    { bg: "#d1fae5", color: "#065f46", label: "Mastered",    bar: "#10b981", icon: "🏆", desc: "Excellent! You've mastered this topic." },
-  proficient:  { bg: "#dbeafe", color: "#1e40af", label: "Proficient",  bar: "#6366f1", icon: "⭐", desc: "Great work! Keep pushing to mastery." },
-  developing:  { bg: "#fef3c7", color: "#92400e", label: "Developing",  bar: "#f59e0b", icon: "📈", desc: "Good progress — keep practicing!" },
-  beginner:    { bg: "#f1f5f9", color: "#475569", label: "Beginner",    bar: "#94a3b8", icon: "🌱", desc: "Just getting started. You've got this!" },
-  not_started: { bg: "#f8fafc", color: "#94a3b8", label: "Not Started", bar: "#e2e8f0", icon: "📖", desc: "Start practicing to build your mastery." },
-};
+function parseSections(content) {
+  const lines = content.split('\n')
+  const sections = []
+  let current = { heading: 'Introduction', lines: [] }
+  for (const line of lines) {
+    const h = line.match(/^#{2,3} (.+)/)
+    if (h) {
+      if (current.lines.some(l => l.trim())) sections.push(current)
+      current = { heading: h[1], lines: [line] }
+    } else {
+      current.lines.push(line)
+    }
+  }
+  if (current.lines.some(l => l.trim())) sections.push(current)
+  return sections
+}
 
-const SUBJECT_GRADIENT = {
-  English: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
-  Science: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-};
-
-const SUBJECT_COLOR = { English: "#6366f1", Science: "#10b981" };
+const mdComponents = {
+  h2: ({ children }) => (
+    <h2 className="text-xl font-bold text-brand-700 mt-8 mb-3 pb-1 border-b-2 border-brand-100">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="text-lg font-semibold text-slate-700 mt-6 mb-2">{children}</h3>
+  ),
+  p: ({ children }) => (
+    <p className="text-slate-700 leading-relaxed mb-4 text-base">{children}</p>
+  ),
+  ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1 text-slate-700">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1 text-slate-700">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => (
+    <strong className="font-semibold text-slate-900 bg-yellow-50 px-0.5 rounded">{children}</strong>
+  ),
+  em: ({ children }) => <em className="italic text-slate-600">{children}</em>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-brand-400 pl-4 py-2 my-4 bg-brand-50 rounded-r-xl text-slate-700 not-italic">
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-5 rounded-xl border border-slate-200 shadow-sm">
+      <table className="w-full text-sm">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-brand-50">{children}</thead>,
+  th: ({ children }) => (
+    <th className="px-4 py-2 text-left font-semibold text-brand-700 border-b border-slate-200">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="px-4 py-2 border-b border-slate-100 text-slate-700">{children}</td>
+  ),
+  code: ({ children }) => (
+    <code className="bg-slate-100 text-brand-700 px-1.5 py-0.5 rounded font-mono text-sm">{children}</code>
+  ),
+}
 
 export default function Lesson() {
-  const { subject, topic } = useParams();
-  const decodedTopic = decodeURIComponent(topic);
-  const navigate = useNavigate();
-
-  const [lesson, setLesson]   = useState(null);
-  const [mastery, setMastery] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const { topicId } = useParams()
+  const navigate = useNavigate()
+  const [lessons, setLessons] = useState([])
+  const [current, setCurrent] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [marking, setMarking] = useState(false)
+  const [readPct, setReadPct] = useState(0)
 
   useEffect(() => {
-    Promise.all([
-      getLesson(subject, decodedTopic),
-      getMastery(subject),
-    ])
-      .then(([lsn, masteries]) => {
-        setLesson(lsn);
-        setMastery(masteries.find(m => m.topic === decodedTopic) || null);
-        if (!lsn) setNotFound(true);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [subject, decodedTopic]);
+    api.getLessons(topicId)
+      .then(setLessons)
+      .finally(() => setLoading(false))
+  }, [topicId])
 
-  const color    = SUBJECT_COLOR[subject] || "#6366f1";
-  const gradient = SUBJECT_GRADIENT[subject] || SUBJECT_GRADIENT.English;
-  const ms       = MASTERY[mastery?.mastery_level || "not_started"];
+  // Track reading progress via window scroll
+  useEffect(() => {
+    const onScroll = () => {
+      const scrolled = window.scrollY
+      const total = document.documentElement.scrollHeight - window.innerHeight
+      setReadPct(total > 0 ? Math.min(100, Math.round((scrolled / total) * 100)) : 100)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [current])
 
-  // ── loading ────────────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div style={{ textAlign: "center", paddingTop: 80, color: "#64748b" }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>📖</div>
-        <p>Loading lesson...</p>
-      </div>
-    );
+  useEffect(() => {
+    window.scrollTo(0, 0)
+    setReadPct(0)
+  }, [current])
+
+  if (loading) return <div className="text-center py-20 text-slate-400">Loading...</div>
+  if (lessons.length === 0)
+    return <div className="text-center py-20 text-slate-400">No lessons for this topic yet.</div>
+
+  const lesson = lessons[current]
+  const sections = parseSections(lesson.content)
+
+  async function handleDone() {
+    if (!lesson.completed) {
+      setMarking(true)
+      await api.markLessonComplete(topicId, lesson.id)
+      setLessons(prev => prev.map(l => l.id === lesson.id ? { ...l, completed: true } : l))
+      setMarking(false)
+    }
+    if (current < lessons.length - 1) {
+      setCurrent(current + 1)
+    } else {
+      navigate(-1)
+    }
   }
 
-  // ── no lesson card ─────────────────────────────────────────────────────────
-  if (notFound) {
-    return (
-      <div style={{ maxWidth: 540, margin: "60px auto", textAlign: "center" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-          No lesson for "{decodedTopic}" yet
-        </h2>
-        <p style={{ color: "#64748b", marginBottom: 28 }}>
-          Jump straight into practice questions — the explanations after each answer will teach you as you go.
-        </p>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <button
-            onClick={() => navigate(`/quiz/${subject}/${encodeURIComponent(decodedTopic)}`)}
-            style={{ padding: "12px 24px", background: color, color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer" }}
-          >
-            Practice This Topic
-          </button>
-          <button
-            onClick={() => navigate("/topics")}
-            style={{ padding: "12px 24px", background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 10, fontWeight: 600, cursor: "pointer" }}
-          >
-            Back to Topics
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── lesson ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div className="w-full">
+      {/* Sticky reading progress bar at top of viewport */}
+      <div className="fixed top-0 left-0 right-0 h-1 z-50 bg-transparent">
+        <div className="h-full bg-brand-500 transition-all duration-200" style={{ width: `${readPct}%` }} />
+      </div>
 
-      {/* breadcrumb */}
-      <button
-        onClick={() => navigate("/topics")}
-        style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", fontSize: 14, fontWeight: 500, marginBottom: 20, padding: 0, display: "flex", alignItems: "center", gap: 6 }}
-      >
-        ← Topics
+      <button onClick={() => navigate(-1)}
+        className="text-brand-600 hover:underline text-sm mb-4 inline-flex items-center gap-1">
+        ← Back to topics
       </button>
 
-      {/* hero header */}
-      <div style={{ background: gradient, borderRadius: 20, padding: "32px 36px", color: "#fff", marginBottom: 32 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.75, marginBottom: 8 }}>
-          {subject}
+      {/* Hero */}
+      <div className="bg-gradient-to-r from-brand-600 to-violet-600 rounded-2xl p-6 mb-6 text-white shadow-lg">
+        <div className="text-xs font-semibold uppercase tracking-widest opacity-70 mb-1">
+          Lesson {current + 1} of {lessons.length}
         </div>
-        <h1 style={{ fontSize: 26, fontWeight: 900, margin: 0, lineHeight: 1.2 }}>
-          {lesson.title}
-        </h1>
-        {mastery && (
-          <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ background: "rgba(255,255,255,0.2)", borderRadius: 8, padding: "4px 12px", fontSize: 12, fontWeight: 700 }}>
-              {ms.icon} {ms.label}
-            </span>
-            {mastery.total_attempts > 0 && (
-              <span style={{ fontSize: 12, opacity: 0.8 }}>
-                {mastery.accuracy}% accuracy · {mastery.total_attempts} questions answered
-              </span>
-            )}
+        <h1 className="text-2xl font-bold">{lesson.title}</h1>
+        <div className="flex items-center gap-3 mt-3">
+          <div className="flex-1 h-1.5 bg-white/30 rounded-full overflow-hidden">
+            <div className="h-full bg-white rounded-full transition-all duration-300" style={{ width: `${readPct}%` }} />
           </div>
+          <span className="text-xs opacity-70 whitespace-nowrap">{readPct}% read</span>
+        </div>
+      </div>
+
+      <div className="flex gap-6 items-start">
+        {/* Sticky table of contents */}
+        {sections.length > 1 && (
+          <aside className="hidden lg:block w-56 shrink-0 sticky top-8">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Contents</p>
+              <ul className="space-y-1">
+                {sections.map((s, i) => (
+                  <li key={i} className="text-sm text-slate-500 leading-snug py-0.5 truncate" title={s.heading}>
+                    {s.heading}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </aside>
         )}
-      </div>
 
-      {/* lesson overview */}
-      <div style={{ marginBottom: 32 }}>
-        <p style={{ fontSize: 16, color: "#334155", lineHeight: 1.75, margin: 0 }}>
-          {lesson.content}
-        </p>
-      </div>
-
-      {/* key concepts */}
-      <div style={{
-        background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0",
-        overflow: "hidden", marginBottom: 24,
-        boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-      }}>
-        <div style={{
-          padding: "16px 24px",
-          background: "#f8fafc",
-          borderBottom: "1px solid #e2e8f0",
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
-          <span style={{ fontSize: 18 }}>🔑</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Key Concepts</span>
-        </div>
-        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-          {lesson.key_points.map((pt, i) => (
-            <div key={i} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-              <div style={{
-                width: 24, height: 24, borderRadius: "50%",
-                background: color + "18",
-                color: color,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12, fontWeight: 800, flexShrink: 0, marginTop: 1,
-              }}>
-                {i + 1}
-              </div>
-              <p style={{ fontSize: 14, color: "#334155", lineHeight: 1.6, margin: 0 }}>{pt}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* example */}
-      {lesson.example && (
-        <div style={{
-          background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0",
-          overflow: "hidden", marginBottom: 32,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-        }}>
-          <div style={{
-            padding: "16px 24px", background: "#f8fafc",
-            borderBottom: "1px solid #e2e8f0",
-            display: "flex", alignItems: "center", gap: 8,
-          }}>
-            <span style={{ fontSize: 18 }}>💡</span>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Example</span>
+        {/* Main content — natural height, page scrolls */}
+        <div className="flex-1 min-w-0">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
+            <ReactMarkdown components={mdComponents}>
+              {lesson.content}
+            </ReactMarkdown>
           </div>
-          <div style={{
-            padding: "20px 24px",
-            borderLeft: `4px solid ${color}`,
-            fontSize: 14, color: "#334155", lineHeight: 1.7,
-          }}>
-            {lesson.example}
-          </div>
-        </div>
-      )}
 
-      {/* your progress card */}
-      <div style={{
-        background: "#fff", borderRadius: 16, border: "1px solid #e2e8f0",
-        padding: "24px 28px", marginBottom: 28,
-        boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-      }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-          <span>📊</span> Your Progress on This Topic
-        </div>
-
-        {mastery && mastery.total_attempts > 0 ? (
-          <div>
-            {/* mastery level */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-              <span style={{ fontSize: 28 }}>{ms.icon}</span>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{ms.label}</div>
-                <div style={{ fontSize: 13, color: "#64748b" }}>{ms.desc}</div>
-              </div>
-            </div>
-
-            {/* stats row */}
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
-              {[
-                { label: "Accuracy",  value: `${mastery.accuracy}%`,        color: mastery.accuracy >= 70 ? "#10b981" : "#f59e0b" },
-                { label: "Answered",  value: mastery.total_attempts,         color: "#6366f1" },
-                { label: "Correct",   value: mastery.correct_count,          color: "#10b981" },
-                { label: "Streak",    value: `${mastery.streak} in a row`,   color: "#f59e0b" },
-              ].map(s => (
-                <div key={s.label} style={{ background: "#f8fafc", borderRadius: 10, padding: "10px 16px", minWidth: 90 }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: s.color }}>{s.value}</div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* accuracy bar */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1, height: 8, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${mastery.accuracy}%`, background: ms.bar, borderRadius: 99, transition: "width 0.5s ease" }} />
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: ms.color, minWidth: 40 }}>{mastery.accuracy}%</span>
-            </div>
-
-            {mastery.needs_review && (
-              <div style={{ marginTop: 12, background: "#fef2f2", borderRadius: 8, padding: "8px 14px", fontSize: 13, color: "#991b1b", display: "flex", gap: 6 }}>
-                <span>⚠️</span> Your accuracy has dropped below 65%. Review this lesson and practice more!
+          {/* Bottom action bar */}
+          <div className="mt-6 flex items-center justify-between pb-8">
+            {lessons.length > 1 && (
+              <div className="flex gap-2">
+                {lessons.map((l, i) => (
+                  <button key={l.id} onClick={() => setCurrent(i)} title={l.title}
+                    className={`w-3 h-3 rounded-full transition-all ${
+                      i === current ? 'bg-brand-500 scale-125'
+                      : l.completed ? 'bg-violet-300' : 'bg-slate-200'
+                    }`} />
+                ))}
               </div>
             )}
-          </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 14, color: "#64748b", fontSize: 14 }}>
-            <span style={{ fontSize: 32 }}>🚀</span>
-            <div>
-              <div style={{ fontWeight: 600, color: "#0f172a", marginBottom: 2 }}>You haven't practiced this topic yet</div>
-              <div>Click "Practice Questions" below to start building your mastery!</div>
+            <div className="flex gap-3 ml-auto">
+              <button onClick={() => navigate(`/topics/${topicId}/quiz`)}
+                className="px-4 py-2.5 rounded-xl border border-brand-300 text-brand-600 font-medium text-sm hover:bg-brand-50 transition-colors">
+                🧪 Take Quiz
+              </button>
+              <button onClick={handleDone} disabled={marking}
+                className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm">
+                {marking ? 'Saving...'
+                  : lesson.completed
+                  ? current < lessons.length - 1 ? 'Next →' : 'Done'
+                  : current < lessons.length - 1 ? 'Mark Read & Next →' : 'Mark as Done ✓'}
+              </button>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* action buttons */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <button
-          onClick={() => navigate(`/quiz/${subject}/${encodeURIComponent(decodedTopic)}`)}
-          style={{
-            flex: 1, minWidth: 200, padding: "15px 24px",
-            background: gradient,
-            color: "#fff", border: "none", borderRadius: 12,
-            fontWeight: 700, fontSize: 15, cursor: "pointer",
-            boxShadow: `0 4px 14px ${color}40`,
-          }}
-        >
-          Practice This Topic →
-        </button>
-        <button
-          onClick={() => navigate(`/quiz/${subject}`)}
-          style={{
-            flex: 1, minWidth: 200, padding: "15px 24px",
-            background: "#f1f5f9",
-            color: "#0f172a", border: "none", borderRadius: 12,
-            fontWeight: 600, fontSize: 15, cursor: "pointer",
-          }}
-        >
-          Full Adaptive Quiz
-        </button>
-      </div>
-
-      {/* topic navigation */}
-      <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid #f1f5f9" }}>
-        <button
-          onClick={() => navigate("/topics")}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", fontSize: 14, fontWeight: 500, padding: 0, display: "flex", alignItems: "center", gap: 6 }}
-        >
-          ← Back to all {subject} topics
-        </button>
+        </div>
       </div>
     </div>
-  );
+  )
 }
