@@ -1,7 +1,7 @@
 """
 enrich_curriculum.py
-  1. Rewrites each lesson to be engaging and student-friendly (grade 7/8)
-  2. Generates 18 MCQs per topic (6 easy / 6 medium / 6 hard)
+  Rewrites every lesson into a rich, chapter-depth markdown lesson (~1500-2000 words).
+  Questions are left untouched.
 
 Run from the backend folder:
     python enrich_curriculum.py
@@ -9,9 +9,7 @@ Run from the backend folder:
 Requires backend/.env containing:
     ANTHROPIC_API_KEY=sk-ant-...
 """
-import json
 import os
-import re
 import time
 from pathlib import Path
 
@@ -32,83 +30,67 @@ db = SessionLocal()
 
 MODEL = "claude-haiku-4-5-20251001"
 
+LESSON_PROMPT = """\
+You are writing a science textbook chapter for a {grade}th grader in a US public school (Massachusetts, NGSS curriculum).
 
-def expand_lesson(topic_name, grade, current_content):
+Topic: {topic}
+
+Write a COMPLETE, DETAILED chapter-length lesson in markdown. This is NOT a summary or overview — it is the full lesson the student will read to actually learn the topic. Aim for 1500–2000 words.
+
+STRUCTURE (use these exact ## headers):
+
+## Introduction
+Open with a vivid 3–5 sentence real-world scenario or story that puts the student right in the middle of the concept. No questions — just a compelling scene. Then explain what this chapter will cover and why it matters in their life.
+
+## Background: Why This Matters
+Explain the broader context. Connect this topic to something the student already knows or experiences daily. Give historical context or a surprising real-world application that makes this feel relevant.
+
+## Core Concepts
+
+Break this into 2–4 subsections using ### headers, one per major idea. For each subsection:
+- Define the concept clearly in plain language
+- Use a concrete analogy comparing it to something familiar (food, sports, phones, the human body, everyday objects)
+- Explain the mechanism or process step by step where applicable
+- **Bold** every key vocabulary term the first time it appears, followed immediately by a plain-English definition in parentheses
+
+## Real-World Connections
+Give 2–3 specific, detailed examples of this topic in action in the real world. These should feel exciting and relevant to a 12–13 year old. Include at least one example from technology, medicine, environment, or sports.
+
+> 💡 **Did You Know?** [One genuinely surprising, specific fact that will make the student say "wow"]
+
+## Think About It
+Present 2 thought-provoking questions or mini-scenarios (no answers given) that push the student to apply what they just learned. Phrase them like "What do you think would happen if..." or "Imagine you are a scientist and..."
+
+## Key Vocabulary
+List every bolded term from the lesson as a bulleted glossary with a 1–2 sentence definition each.
+
+## Summary
+Write 5–7 bullet points covering the most important ideas from the chapter. Each bullet should be a complete, informative sentence — not just a label.
+
+---
+
+Tone: Enthusiastic, clear, conversational — like a great teacher who loves their subject. Never dry, never condescending. Speak directly to the student as "you."
+
+Return only the markdown lesson. No preamble, no "here is the lesson", no closing remarks.
+"""
+
+
+def expand_lesson(topic_name: str, grade: int) -> str:
+    prompt = LESSON_PROMPT.format(
+        grade=grade,
+        topic=topic_name,
+    )
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=1400,
-        messages=[{
-            "role": "user",
-            "content": f"""Rewrite the following as an exciting, student-friendly science lesson for a {grade}th grader.
-
-Topic: {topic_name}
-Source material:
-{current_content[:2500]}
-
-Requirements:
-- Open with a 1-2 sentence real-world hook that grabs attention (e.g. "Have you ever wondered why...")
-- Use ## markdown headers for at least 3 clear sections
-- **Bold** every key vocabulary term the first time it appears
-- Include exactly one blockquote like this:
-  > 💡 **Did You Know?** [surprising or cool fact]
-- Use bullet points or numbered steps where helpful
-- Include a relatable real-world example (sports, food, phones, nature, etc.)
-- End with a "## Key Takeaways" section listing 4-5 bullet points
-- Tone: enthusiastic, clear, never dry or textbook-boring
-- Length: 500-750 words
-
-Return only the markdown lesson, no preamble or commentary."""
-        }]
+        max_tokens=4000,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
     )
     return resp.content[0].text.strip()
-
-
-def generate_questions(topic_name, grade, lesson_content):
-    resp = client.messages.create(
-        model=MODEL,
-        max_tokens=4500,
-        messages=[{
-            "role": "user",
-            "content": f"""Generate exactly 18 multiple-choice quiz questions for a {grade}th grade student about "{topic_name}".
-
-Base your questions on this lesson:
-{lesson_content[:2200]}
-
-Rules:
-- First 6 questions: EASY — direct recall of facts from the lesson
-- Next 6 questions: MEDIUM — requires understanding and simple application
-- Last 6 questions: HARD — analysis, comparison, or real-world application
-- Each question has exactly 4 answer choices
-- Vary which position (0, 1, 2, or 3) is correct — do NOT always use the same index
-- Each explanation is 1-2 sentences explaining why the answer is correct
-- Questions must be different from each other — no repetition
-
-Return ONLY a valid JSON array with no markdown fences, no extra text:
-[
-  {{
-    "stem": "Question text ending with a question mark?",
-    "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
-    "correct_index": 2,
-    "explanation": "One or two sentences explaining why this is correct."
-  }}
-]"""
-        }]
-    )
-    return resp.content[0].text.strip()
-
-
-def parse_json_questions(raw):
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r'\[[\s\S]*\]', raw)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-    return []
 
 
 topics = (
@@ -119,52 +101,39 @@ topics = (
 )
 
 total = len(topics)
-print(f"Enriching {total} topics with Claude {MODEL}...\n")
+print(f"Re-enriching lessons for {total} topics with Claude {MODEL}...\n")
+print("(Questions are not being changed)\n")
+
+failed = []
 
 for i, topic in enumerate(topics, 1):
     grade = topic.subject.grade
     lesson = db.query(models.Lesson).filter(models.Lesson.topic_id == topic.id).first()
 
     if not lesson:
-        print(f"[{i}/{total}] {topic.name} — no lesson, skipping")
+        print(f"[{i}/{total}] {topic.name} — no lesson found, skipping")
         continue
 
-    print(f"[{i}/{total}] {topic.name} (Grade {grade})")
+    print(f"[{i}/{total}] {topic.name} (Grade {grade}) ... ", end="", flush=True)
 
-    # ── Expand lesson ──────────────────────────────────────────────────────
-    print(f"         Expanding lesson...", end=" ", flush=True)
     try:
-        lesson.content = expand_lesson(topic.name, grade, lesson.content)
-        db.flush()
-        print("OK")
+        lesson.content = expand_lesson(topic.name, grade)
+        db.commit()
+        # estimate word count
+        word_count = len(lesson.content.split())
+        print(f"OK  (~{word_count} words)")
     except Exception as e:
+        db.rollback()
+        failed.append(topic.name)
         print(f"FAILED — {e}")
 
-    # ── Generate questions ─────────────────────────────────────────────────
-    print(f"         Generating 18 questions...", end=" ", flush=True)
-    try:
-        raw = generate_questions(topic.name, grade, lesson.content)
-        questions = parse_json_questions(raw)
-
-        if questions:
-            db.query(models.Question).filter(models.Question.topic_id == topic.id).delete()
-            for q in questions:
-                db.add(models.Question(
-                    topic_id=topic.id,
-                    stem=q["stem"],
-                    options=q["options"],
-                    correct_index=int(q["correct_index"]),
-                    explanation=q.get("explanation", ""),
-                ))
-            db.flush()
-            print(f"OK ({len(questions)} questions)")
-        else:
-            print("FAILED — could not parse JSON response")
-    except Exception as e:
-        print(f"FAILED — {e}")
-
-    db.commit()
-    time.sleep(0.5)
+    time.sleep(0.3)
 
 db.close()
-print(f"\nDone! All {total} topics enriched.")
+
+print(f"\n{'='*50}")
+print(f"Done. {total - len(failed)}/{total} lessons enriched.")
+if failed:
+    print(f"\nFailed topics ({len(failed)}):")
+    for name in failed:
+        print(f"  - {name}")
