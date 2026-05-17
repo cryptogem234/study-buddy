@@ -14,7 +14,7 @@ function shuffle(arr) {
 }
 
 function shuffleOptions(q) {
-  const idx = shuffle([0, 1, 2, 3])
+  const idx = shuffle(q.options.map((_, i) => i))
   return {
     ...q,
     options: idx.map(i => q.options[i]),
