@@ -51,7 +51,7 @@ class Question(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"), nullable=False)
     stem: Mapped[str] = mapped_column(Text, nullable=False)
-    options: Mapped[list] = mapped_column(JSON, nullable=False)  # list of strings (6 options)
+    options: Mapped[list] = mapped_column(JSON, nullable=False)  # list of strings (4 shown per quiz)
     correct_index: Mapped[int] = mapped_column(Integer, nullable=False)  # 0-based index into options
     explanation: Mapped[str] = mapped_column(Text, default="")
 

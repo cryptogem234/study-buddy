@@ -5,3 +5,4 @@ __pycache__/
 backend/.env
 node_modules/
 dist/
+.claude/

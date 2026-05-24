@@ -15,10 +15,14 @@ function shuffle(arr) {
 
 function shuffleOptions(q) {
   const idx = shuffle(q.options.map((_, i) => i))
+  // Keep correct answer within first 4 slots
+  const correctPos = idx.indexOf(q.correct_index)
+  if (correctPos >= 4) [idx[3], idx[correctPos]] = [idx[correctPos], idx[3]]
+  const trimmed = idx.slice(0, 4)
   return {
     ...q,
-    options: idx.map(i => q.options[i]),
-    correct_index: idx.indexOf(q.correct_index),
+    options: trimmed.map(i => q.options[i]),
+    correct_index: trimmed.indexOf(q.correct_index),
   }
 }
 
