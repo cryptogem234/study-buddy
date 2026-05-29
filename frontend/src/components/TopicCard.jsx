@@ -52,13 +52,21 @@ export default function TopicCard({ topic }) {
       )}
 
       {/* Action buttons */}
-      <div className="flex gap-2 mt-auto pt-1">
+      <div className="flex gap-1.5 mt-auto pt-1">
         {topic.lesson_count > 0 && (
           <button
             onClick={() => navigate(`/topics/${topic.id}/lesson`)}
             className="flex-1 py-2 rounded-lg bg-violet-50 text-violet-700 font-medium text-xs hover:bg-violet-100 transition-colors"
           >
             📖 Study
+          </button>
+        )}
+        {topic.lesson_count > 0 && (
+          <button
+            onClick={() => navigate(`/topics/${topic.id}/vocabulary`)}
+            className="flex-1 py-2 rounded-lg bg-purple-50 text-purple-700 font-medium text-xs hover:bg-purple-100 transition-colors"
+          >
+            📚 Vocab
           </button>
         )}
         {topic.question_count > 0 && (

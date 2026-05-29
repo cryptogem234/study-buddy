@@ -71,6 +71,17 @@ class LessonProgressIn(BaseModel):
     lesson_id: int
 
 
+class VocabularyWordOut(BaseModel):
+    id: int
+    lesson_id: int
+    word: str
+    definition: str
+    part_of_speech: str
+    example_sentence: str
+
+    model_config = {"from_attributes": True}
+
+
 class TopicProgress(BaseModel):
     topic_id: int
     topic_name: str

@@ -43,6 +43,7 @@ class Lesson(Base):
     order: Mapped[int] = mapped_column(Integer, default=0)
 
     topic: Mapped["Topic"] = relationship("Topic", back_populates="lessons")
+    vocabulary_words: Mapped[list["VocabularyWord"]] = relationship("VocabularyWord", back_populates="lesson", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -79,3 +80,16 @@ class LessonProgress(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     topic: Mapped["Topic"] = relationship("Topic", back_populates="lesson_progress")
+
+
+class VocabularyWord(Base):
+    __tablename__ = "vocabulary_words"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False)
+    word: Mapped[str] = mapped_column(String(100), nullable=False)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    part_of_speech: Mapped[str] = mapped_column(String(50), default="")
+    example_sentence: Mapped[str] = mapped_column(Text, default="")
+
+    lesson: Mapped["Lesson"] = relationship("Lesson", back_populates="vocabulary_words")

@@ -27,4 +27,5 @@ export const api = {
     post(`/topics/${topicId}/lesson-progress`, { lesson_id: lessonId }),
   getProgress: () => get('/progress'),
   getSubjectProgress: () => get('/progress/subjects'),
+  getVocabulary: (topicId) => get(`/topics/${topicId}/vocabulary`),
 }

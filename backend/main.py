@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 import models  # noqa: F401 — registers all models with Base
-from routers import subjects, topics, lessons, questions, progress
+from routers import subjects, topics, lessons, questions, progress, vocabulary
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,3 +20,4 @@ app.include_router(topics.router)
 app.include_router(lessons.router)
 app.include_router(questions.router)
 app.include_router(progress.router)
+app.include_router(vocabulary.router)

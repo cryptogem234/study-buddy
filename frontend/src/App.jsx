@@ -5,6 +5,7 @@ import Topics from './pages/Topics'
 import Lesson from './pages/Lesson'
 import Quiz from './pages/Quiz'
 import Progress from './pages/Progress'
+import Vocabulary from './pages/Vocabulary'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/topics/:topicId/lesson" element={<Lesson />} />
           <Route path="/topics/:topicId/quiz" element={<Quiz />} />
           <Route path="/progress" element={<Progress />} />
+          <Route path="/topics/:topicId/vocabulary" element={<Vocabulary />} />
         </Route>
       </Routes>
     </BrowserRouter>
