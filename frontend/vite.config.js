@@ -10,6 +10,7 @@ export default defineConfig({
       '/topics': 'http://localhost:8000',
       '/quiz-attempts': 'http://localhost:8000',
       '/progress': 'http://localhost:8000',
+      '/static': 'http://localhost:8000',
     },
   },
 })
