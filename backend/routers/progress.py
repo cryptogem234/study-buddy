@@ -37,8 +37,26 @@ def calc_streak(db: Session) -> int:
     return streak
 
 
-def topic_status(topic, db: Session) -> tuple[str, float | None, int]:
-    attempts = db.query(QuizAttempt).filter(QuizAttempt.topic_id == topic.id).all()
+def attempt_trend(attempts: list[QuizAttempt]) -> str | None:
+    if len(attempts) < 2:
+        return None
+    latest, previous = attempts[0], attempts[1]
+    latest_pct = latest.score / latest.total
+    previous_pct = previous.score / previous.total
+    if latest_pct > previous_pct:
+        return "up"
+    if latest_pct < previous_pct:
+        return "down"
+    return "flat"
+
+
+def topic_status(topic, db: Session) -> tuple[str, float | None, int, list[QuizAttempt]]:
+    attempts = (
+        db.query(QuizAttempt)
+        .filter(QuizAttempt.topic_id == topic.id)
+        .order_by(QuizAttempt.attempted_at.desc())
+        .all()
+    )
     completed_ids = {
         lp.lesson_id
         for lp in db.query(LessonProgress).filter(LessonProgress.topic_id == topic.id).all()
@@ -48,13 +66,13 @@ def topic_status(topic, db: Session) -> tuple[str, float | None, int]:
 
     has_activity = len(completed_ids) > 0 or len(attempts) > 0
     if not has_activity:
-        return "not_started", best, len(completed_ids)
+        return "not_started", best, len(completed_ids), attempts
 
     lessons_done = len(topic.lessons) == 0 or len(completed_ids) >= len(topic.lessons)
     quiz_passed = any(a.score / a.total >= 0.7 for a in attempts) if attempts else False
     if lessons_done and (quiz_passed or not has_questions):
-        return "completed", best, len(completed_ids)
-    return "in_progress", best, len(completed_ids)
+        return "completed", best, len(completed_ids), attempts
+    return "in_progress", best, len(completed_ids), attempts
 
 
 @router.post("/quiz-attempts", response_model=QuizAttemptOut)
@@ -94,7 +112,7 @@ def get_subject_progress(db: Session = Depends(get_db)):
         topic_list = []
         completed = 0
         for t in topics:
-            status, best, lessons_done = topic_status(t, db)
+            status, best, lessons_done, attempts = topic_status(t, db)
             if status == "completed":
                 completed += 1
             q_count = db.query(Question).filter(Question.topic_id == t.id).count()
@@ -108,6 +126,8 @@ def get_subject_progress(db: Session = Depends(get_db)):
                 lessons_completed=lessons_done,
                 lesson_count=len(t.lessons),
                 question_count=q_count,
+                attempts=[QuizAttemptOut.model_validate(a) for a in attempts],
+                trend=attempt_trend(attempts),
             ))
         result.append(SubjectProgress(
             subject_id=s.id,

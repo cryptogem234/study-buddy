@@ -8,6 +8,12 @@ const STATUS_STYLE = {
   not_started: { dot: 'bg-slate-300',  text: 'text-slate-400',  label: 'Not Started' },
 }
 
+const TREND_STYLE = {
+  up:   { icon: '▲', text: 'text-green-500' },
+  down: { icon: '▼', text: 'text-red-400' },
+  flat: { icon: '▬', text: 'text-slate-400' },
+}
+
 function fmt(dt) {
   return new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -17,6 +23,7 @@ export default function Progress() {
   const [summary, setSummary] = useState(null)
   const [subjects, setSubjects] = useState([])
   const [expanded, setExpanded] = useState({})
+  const [historyOpen, setHistoryOpen] = useState({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -80,24 +87,54 @@ export default function Progress() {
                 <div className="border-t border-slate-100 divide-y divide-slate-50">
                   {subj.topics.map(t => {
                     const s = STATUS_STYLE[t.status] ?? STATUS_STYLE.not_started
+                    const trend = TREND_STYLE[t.trend]
+                    const historyIsOpen = historyOpen[t.topic_id] ?? false
                     return (
-                      <div key={t.topic_id} className="flex items-center gap-3 px-6 py-3 hover:bg-slate-50 cursor-pointer"
-                        onClick={() => navigate(`/topics/${t.topic_id}/lesson`)}>
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-slate-700 truncate">{t.topic_name}</p>
-                          <p className="text-xs text-slate-400">Term {t.term} · {t.unit}</p>
+                      <div key={t.topic_id}>
+                        <div className="flex items-center gap-3 px-6 py-3 hover:bg-slate-50 cursor-pointer"
+                          onClick={() => navigate(`/topics/${t.topic_id}/lesson`)}>
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-slate-700 truncate">{t.topic_name}</p>
+                            <p className="text-xs text-slate-400">Term {t.term} · {t.unit}</p>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {t.best_score != null && (
+                              <span className={`text-xs font-semibold inline-flex items-center gap-1 ${
+                                t.best_score >= 80 ? 'text-green-600' : t.best_score >= 60 ? 'text-amber-600' : 'text-red-400'
+                              }`}>
+                                {Math.round(t.best_score)}%
+                                {trend && <span className={trend.text}>{trend.icon}</span>}
+                              </span>
+                            )}
+                            <span className={`text-xs font-medium ${s.text}`}>{s.label}</span>
+                            {t.attempts.length > 0 && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setHistoryOpen(h => ({ ...h, [t.topic_id]: !historyIsOpen })) }}
+                                className="text-xs text-slate-400 hover:text-brand-600 underline"
+                              >
+                                {t.attempts.length} {t.attempts.length === 1 ? 'quiz' : 'quizzes'}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          {t.best_score != null && (
-                            <span className={`text-xs font-semibold ${
-                              t.best_score >= 80 ? 'text-green-600' : t.best_score >= 60 ? 'text-amber-600' : 'text-red-400'
-                            }`}>
-                              {Math.round(t.best_score)}%
-                            </span>
-                          )}
-                          <span className={`text-xs font-medium ${s.text}`}>{s.label}</span>
-                        </div>
+                        {historyIsOpen && t.attempts.length > 0 && (
+                          <div className="px-6 pb-3 pl-11">
+                            <ul className="space-y-1">
+                              {t.attempts.map(a => {
+                                const pct = Math.round((a.score / a.total) * 100)
+                                return (
+                                  <li key={a.id} className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1.5">
+                                    <span>{fmt(a.attempted_at)}</span>
+                                    <span className={`font-semibold ${pct >= 80 ? 'text-green-600' : pct >= 60 ? 'text-amber-600' : 'text-red-400'}`}>
+                                      {a.score}/{a.total} · {pct}%
+                                    </span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )
                   })}

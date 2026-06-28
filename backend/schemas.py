@@ -92,6 +92,8 @@ class TopicProgress(BaseModel):
     lessons_completed: int
     lesson_count: int
     question_count: int
+    attempts: list[QuizAttemptOut] = []
+    trend: str | None = None   # "up" | "down" | "flat" | None (fewer than 2 attempts)
 
 
 class SubjectProgress(BaseModel):
