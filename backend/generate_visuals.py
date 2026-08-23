@@ -33,7 +33,7 @@ if not API_KEY:
 
 client = anthropic.Anthropic(api_key=API_KEY)
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".svg"}
 
 DIAGRAM_PROMPT = """\

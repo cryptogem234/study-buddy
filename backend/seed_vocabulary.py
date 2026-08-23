@@ -68,7 +68,7 @@ def seed():
         print(f"[{i}/{total}] Generating: {lesson.title} ...", end=" ", flush=True)
         try:
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-haiku-4-5",
                 max_tokens=1024,
                 system=SYSTEM,
                 messages=[{
