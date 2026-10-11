@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../api'
+import Reveal from '../components/Reveal'
 
 function parseSections(content) {
   const lines = content.split('\n')
@@ -18,6 +19,91 @@ function parseSections(content) {
   }
   if (current.lines.some(l => l.trim())) sections.push(current)
   return sections
+}
+
+// Split lesson markdown at "## " headings so add-ons can be placed between sections
+function splitH2(content) {
+  const parts = []
+  let current = { heading: '', text: [] }
+  for (const line of content.split('\n')) {
+    const h = line.match(/^## (.+)/)
+    if (h) {
+      parts.push(current)
+      current = { heading: h[1].trim(), text: [line] }
+    } else {
+      current.text.push(line)
+    }
+  }
+  parts.push(current)
+  return parts.filter(p => p.text.some(l => l.trim())).map(p => ({ heading: p.heading, text: p.text.join('\n') }))
+}
+
+function checkYourselfIndex(parts) {
+  for (const prefix of ['Real-World', 'Practice It', 'Think About It', 'Key Vocabulary', 'Summary']) {
+    const i = parts.findIndex(p => p.heading.startsWith(prefix))
+    if (i > 0) return i
+  }
+  return parts.length
+}
+
+function CheckYourself({ items }) {
+  return (
+    <div className="my-8 rounded-2xl border-2 border-sky-200 bg-sky-50 p-5">
+      <h2 className="text-lg font-bold text-sky-800 mb-1">✅ Check Yourself</h2>
+      <p className="text-sm text-sky-700 mb-4">Answer each one in your head (or out loud) before you peek.</p>
+      <div className="space-y-3">
+        {items.map((c, i) => <Reveal key={i} label={`Question ${i + 1}`} question={c.question} answer={c.answer} />)}
+      </div>
+    </div>
+  )
+}
+
+function ThinkAnswers({ items }) {
+  return (
+    <div className="mb-6 space-y-3">
+      {items.map(a => (
+        <Reveal key={a.number} label={items.length > 1 ? `Model answer ${a.number}` : 'Model answer'} answer={a.answer} />
+      ))}
+    </div>
+  )
+}
+
+function LevelUp({ levelUp, unlocked, quizCount, topicId, navigate }) {
+  return (
+    <div id="level-up" className="mt-10 rounded-2xl overflow-hidden border-2 border-amber-300 scroll-mt-6">
+      <div className="bg-gradient-to-r from-amber-400 to-orange-500 px-6 py-4 text-white">
+        <div className="text-xs font-semibold uppercase tracking-widest opacity-90">🚀 Level Up · Grade 9</div>
+        <h2 className="text-xl font-bold">{levelUp.title}</h2>
+        <div className="text-xs opacity-90 mt-0.5">{levelUp.standard}</div>
+      </div>
+      {unlocked ? (
+        <div className="bg-amber-50/40 p-6">
+          <ReactMarkdown components={mdComponents}>{levelUp.content}</ReactMarkdown>
+          <h3 className="text-lg font-semibold text-slate-700 mt-6 mb-3">Check Yourself</h3>
+          <div className="space-y-3 mb-6">
+            {levelUp.checks.map((c, i) => <Reveal key={i} label={`Question ${i + 1}`} question={c.question} answer={c.answer} />)}
+          </div>
+          {quizCount > 0 ? (
+            <button onClick={() => navigate(`/topics/${topicId}/quiz?level=level_up`)}
+              className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm transition-colors">
+              🚀 Take the Level Up Quiz
+            </button>
+          ) : (
+            <p className="text-sm text-slate-500 italic">The Level Up quiz for this topic is coming soon.</p>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white p-6 text-center">
+          <div className="text-4xl mb-2">🔒</div>
+          <p className="text-slate-700 font-medium">Pass the Core quiz with 80% or higher to unlock this Grade 9 challenge.</p>
+          <button onClick={() => navigate(`/topics/${topicId}/quiz`)}
+            className="mt-4 px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-semibold text-sm transition-colors">
+            🧪 Take the Core Quiz
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const mdComponents = {
@@ -62,6 +148,7 @@ const mdComponents = {
 export default function Lesson() {
   const { topicId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [lessons, setLessons] = useState([])
   const [current, setCurrent] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -86,9 +173,13 @@ export default function Lesson() {
   }, [current])
 
   useEffect(() => {
+    if (location.hash === '#level-up' && lessons.length) {
+      document.getElementById('level-up')?.scrollIntoView()
+      return
+    }
     window.scrollTo(0, 0)
     setReadPct(0)
-  }, [current])
+  }, [current, lessons.length, location.hash])
 
   if (loading) return <div className="text-center py-20 text-slate-400">Loading...</div>
   if (lessons.length === 0)
@@ -96,6 +187,9 @@ export default function Lesson() {
 
   const lesson = lessons[current]
   const sections = parseSections(lesson.content)
+  const extras = lesson.extras
+  const parts = splitH2(lesson.content)
+  const checkAt = checkYourselfIndex(parts)
 
   async function handleDone() {
     if (!lesson.completed) {
@@ -157,9 +251,19 @@ export default function Lesson() {
         {/* Main content — natural height, page scrolls */}
         <div className="flex-1 min-w-0">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-            <ReactMarkdown components={mdComponents}>
-              {lesson.content}
-            </ReactMarkdown>
+            {parts.map((part, i) => (
+              <div key={i}>
+                {i === checkAt && extras?.check_yourself?.length > 0 && <CheckYourself items={extras.check_yourself} />}
+                <ReactMarkdown components={mdComponents}>{part.text}</ReactMarkdown>
+                {part.heading.startsWith('Think About It') && extras?.think_answers?.length > 0 && (
+                  <ThinkAnswers items={extras.think_answers} />
+                )}
+              </div>
+            ))}
+            {checkAt === parts.length && extras?.check_yourself?.length > 0 && <CheckYourself items={extras.check_yourself} />}
+            {extras?.level_up && (
+              <LevelUp levelUp={extras.level_up} unlocked={lesson.level_up_unlocked} quizCount={lesson.level_up_count} topicId={topicId} navigate={navigate} />
+            )}
           </div>
 
           {/* Bottom action bar */}

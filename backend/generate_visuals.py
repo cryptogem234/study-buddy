@@ -33,7 +33,9 @@ if not API_KEY:
 
 client = anthropic.Anthropic(api_key=API_KEY)
 
-MODEL = "claude-sonnet-5"
+MODEL = "claude-sonnet-5-5"
+PRICE_IN, PRICE_OUT = 2.00, 10.00  # $ per million tokens
+spent = 0.0
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".svg"}
 
 DIAGRAM_PROMPT = """\
@@ -56,6 +58,7 @@ Style requirements:
 - White background
 - Figure size 8x6 inches, dpi=150
 - No legend clutter — label elements directly on the diagram where possible
+- Leave generous space: no text may overlap other text, arrows or shapes. Use fewer, \nshorter labels rather than crowding. Before saving, call fig.canvas.draw(), get every \ntext object's window extent, and if any two overlap, move them apart and check again.
 
 Save the figure to a file named "diagram.png" using plt.savefig("diagram.png", \
 bbox_inches="tight"). Do not display the plot. Then copy it to the output directory \
@@ -72,12 +75,14 @@ def slugify(name: str) -> str:
 
 def generate_diagram(topic: str, excerpt: str, subject: str) -> bytes | None:
     prompt = DIAGRAM_PROMPT.format(topic=topic, excerpt=excerpt, subject=subject)
+    global spent
     response = client.messages.create(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=16000,
         messages=[{"role": "user", "content": prompt}],
         tools=[{"type": "code_execution_20260120", "name": "code_execution"}],
     )
+    spent += (response.usage.input_tokens * PRICE_IN + response.usage.output_tokens * PRICE_OUT) / 1_000_000
 
     file_id = None
     for block in response.content:
@@ -121,7 +126,7 @@ def main():
         db.query(models.Lesson)
         .join(models.Topic)
         .join(models.Subject)
-        .filter(models.Subject.name == subject_name)
+        .filter(models.Subject.name == subject_name, models.Topic.hidden == 0)
         .order_by(models.Topic.order)
         .all()
     )
@@ -153,7 +158,7 @@ def main():
             web_path = f"/static/{subject_slug}/{filename}"
             lesson.content = embed_image(lesson.content, web_path, f"Diagram: {lesson.title}")
             db.commit()
-            print(f"OK ({len(image_bytes)} bytes)")
+            print(f"OK ({len(image_bytes)} bytes, total ${spent:.2f})", flush=True)
         except Exception as e:
             db.rollback()
             failed.append(lesson.title)
@@ -163,7 +168,7 @@ def main():
 
     print(f"\n{'=' * 50}")
     succeeded = total - skipped - len(failed)
-    print(f"Done. {succeeded}/{total} lessons illustrated ({skipped} already done).")
+    print(f"Done. {succeeded}/{total} lessons illustrated ({skipped} already done). API cost about ${spent:.2f}")
     if failed:
         print(f"\nFailed ({len(failed)}):")
         for title in failed:

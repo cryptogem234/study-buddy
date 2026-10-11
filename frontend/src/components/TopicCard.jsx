@@ -23,13 +23,16 @@ export default function TopicCard({ topic }) {
           <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
           {s.label}
         </span>
-        {topic.best_score !== null && topic.best_score !== undefined && (
-          <span className={`text-xs font-bold ${
-            topic.best_score >= 80 ? 'text-green-600' : topic.best_score >= 60 ? 'text-amber-600' : 'text-red-400'
-          }`}>
-            {Math.round(topic.best_score)}% best
-          </span>
-        )}
+        <span className="flex items-center gap-2">
+          {topic.level_up_passed && <span title="Level Up star earned (Grade 9)" className="text-sm">⭐</span>}
+          {topic.best_score !== null && topic.best_score !== undefined && (
+            <span className={`text-xs font-bold ${
+              topic.best_score >= 80 ? 'text-green-600' : topic.best_score >= 60 ? 'text-amber-600' : 'text-red-400'
+            }`}>
+              {Math.round(topic.best_score)}% best
+            </span>
+          )}
+        </span>
       </div>
 
       {/* Name */}
@@ -82,6 +85,25 @@ export default function TopicCard({ topic }) {
           </button>
         )}
       </div>
+
+      {topic.level_up_count > 0 && (
+        <button
+          onClick={() => topic.level_up_unlocked && navigate(
+            topic.has_level_up_lesson ? `/topics/${topic.id}/lesson#level-up` : `/topics/${topic.id}/quiz?level=level_up`
+          )}
+          disabled={!topic.level_up_unlocked}
+          title={topic.level_up_unlocked ? 'Grade 9 challenge' : 'Pass the quiz with 80% to unlock'}
+          className={`w-full py-2 rounded-lg font-medium text-xs transition-colors ${
+            topic.level_up_passed
+              ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+              : topic.level_up_unlocked
+              ? 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+              : 'bg-slate-50 text-slate-400 cursor-default'
+          }`}
+        >
+          {topic.level_up_passed ? '⭐ Level Up done' : topic.level_up_unlocked ? '🚀 Level Up (Grade 9)' : '🔒 Level Up — pass quiz to unlock'}
+        </button>
+      )}
     </div>
   )
 }

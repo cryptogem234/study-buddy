@@ -9,7 +9,7 @@ router = APIRouter(prefix="/subjects", tags=["subjects"])
 
 @router.get("", response_model=list[SubjectOut])
 def list_subjects(db: Session = Depends(get_db)):
-    subjects = db.query(Subject).order_by(Subject.grade, Subject.name).all()
+    subjects = db.query(Subject).order_by(Subject.position, Subject.grade, Subject.name).all()
     result = []
     for s in subjects:
         result.append(SubjectOut(
@@ -18,6 +18,7 @@ def list_subjects(db: Session = Depends(get_db)):
             grade=s.grade,
             description=s.description,
             icon=s.icon,
-            topic_count=len(s.topics),
+            topic_count=sum(not t.hidden for t in s.topics),
+            archived=bool(s.archived),
         ))
     return result

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 
-const QUESTIONS_PER_SESSION = 10
+const QUESTIONS_PER_SESSION = { core: 10, level_up: 8 }
+const PASS_PCT = 80
 
 function shuffle(arr) {
   const a = [...arr]
@@ -26,13 +27,16 @@ function shuffleOptions(q) {
   }
 }
 
-function buildSession(questions) {
-  return shuffle(questions).slice(0, QUESTIONS_PER_SESSION).map(shuffleOptions)
+function buildSession(questions, level) {
+  return shuffle(questions).slice(0, QUESTIONS_PER_SESSION[level]).map(shuffleOptions)
 }
 
 export default function Quiz() {
   const { topicId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const level = searchParams.get('level') === 'level_up' ? 'level_up' : 'core'
+  const isLevelUp = level === 'level_up'
   const [allQuestions, setAllQuestions] = useState([])
   const [session, setSession] = useState([])
   const [loading, setLoading] = useState(true)
@@ -44,14 +48,20 @@ export default function Quiz() {
   const [reviewing, setReviewing] = useState(false)
 
   useEffect(() => {
-    api.getQuestions(topicId).then(qs => {
+    setLoading(true)
+    setCurrent(0)
+    setSelected(null)
+    setAnswers([])
+    setDone(false)
+    setReviewing(false)
+    api.getQuestions(topicId, level).then(qs => {
       setAllQuestions(qs)
-      setSession(buildSession(qs))
+      setSession(buildSession(qs, level))
     }).finally(() => setLoading(false))
-  }, [topicId])
+  }, [topicId, level])
 
   function restart() {
-    setSession(buildSession(allQuestions))
+    setSession(buildSession(allQuestions, level))
     setCurrent(0)
     setSelected(null)
     setAnswers([])
@@ -81,7 +91,10 @@ export default function Quiz() {
       setDone(true)
       const score = newAnswers.filter(a => a.correct).length
       setSaving(true)
-      await api.saveQuizAttempt(Number(topicId), score, session.length)
+      await api.saveQuizAttempt(
+        Number(topicId), score, session.length, level,
+        newAnswers.map(a => ({ question_id: a.q.id, correct: a.correct })),
+      )
       setSaving(false)
     }
   }
@@ -154,8 +167,29 @@ export default function Quiz() {
     return (
       <div className="max-w-lg mx-auto text-center py-10">
         <div className="text-7xl mb-4">{emoji}</div>
-        <h1 className="text-3xl font-bold text-slate-800 mb-1">Quiz Complete!</h1>
+        <h1 className="text-3xl font-bold text-slate-800 mb-1">{isLevelUp ? 'Level Up Quiz Complete!' : 'Quiz Complete!'}</h1>
         <p className="text-slate-500 mb-6 text-lg">{msg}</p>
+
+        {pct >= PASS_PCT && (
+          <div className={`rounded-2xl border-2 p-5 mb-6 ${isLevelUp ? 'border-amber-300 bg-amber-50' : 'border-orange-300 bg-orange-50'}`}>
+            {isLevelUp ? (
+              <p className="text-amber-800 font-semibold">⭐ You earned a Level Up star — that's Grade 9 work!</p>
+            ) : (
+              <>
+                <p className="text-orange-800 font-semibold mb-3">🚀 Level Up unlocked! Ready for a Grade 9 challenge on this topic?</p>
+                <button onClick={() => navigate(`/topics/${topicId}/lesson#level-up`)}
+                  className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm">
+                  Go to Level Up →
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {pct < PASS_PCT && (
+          <p className="text-sm text-slate-500 mb-6">
+            Score {PASS_PCT}% or higher to {isLevelUp ? 'earn your ⭐' : 'complete this topic and unlock Level Up'}.
+          </p>
+        )}
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 mb-6">
           <div className={`text-6xl font-black mb-2 ${pct >= 80 ? 'text-green-500' : pct >= 60 ? 'text-yellow-500' : 'text-red-400'}`}>
@@ -177,7 +211,7 @@ export default function Quiz() {
             ))}
           </div>
 
-          <p className="text-xs text-slate-400 mt-3">{allQuestions.length} questions in pool · {QUESTIONS_PER_SESSION} per attempt</p>
+          <p className="text-xs text-slate-400 mt-3">{allQuestions.length} questions in pool · {Math.min(QUESTIONS_PER_SESSION[level], allQuestions.length)} per attempt</p>
         </div>
 
         {saving && <p className="text-slate-400 text-sm mb-4">Saving score...</p>}
@@ -208,6 +242,11 @@ export default function Quiz() {
         ← Back
       </button>
 
+      {isLevelUp && (
+        <div className="mb-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold uppercase tracking-wide">
+          🚀 Level Up · Grade 9
+        </div>
+      )}
       <div className="flex justify-between text-sm text-slate-500 mb-2">
         <span>Question {current + 1} of {session.length}</span>
         <span>{answers.filter(a => a.correct).length} correct so far</span>

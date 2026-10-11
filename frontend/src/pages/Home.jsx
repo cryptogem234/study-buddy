@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import SubjectCard from '../components/SubjectCard'
 
 export default function Home() {
   const [subjects, setSubjects] = useState([])
   const [progress, setProgress] = useState(null)
+  const [reading, setReading] = useState(null)
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    Promise.all([api.getSubjects(), api.getProgress()])
-      .then(([s, p]) => { setSubjects(s); setProgress(p) })
+    Promise.all([api.getSubjects(), api.getProgress(), api.getReadingProgress()])
+      .then(([s, p, r]) => { setSubjects(s); setProgress(p); setReading(r) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -61,6 +64,23 @@ export default function Home() {
         </div>
       )}
 
+      {/* Reading Comprehension */}
+      {reading?.passages_total > 0 && (
+        <button onClick={() => navigate('/reading')}
+          className="w-full text-left mb-8 rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-shadow bg-gradient-to-r from-rose-400 to-pink-500 text-white p-6 flex items-center gap-5 flex-wrap">
+          <span className="text-5xl">📖</span>
+          <div className="flex-1 min-w-[12rem]">
+            <div className="text-xs font-semibold uppercase tracking-widest opacity-80">Grade 8 · Level Up to Grade 9</div>
+            <h2 className="text-2xl font-bold">Reading Comprehension</h2>
+            <p className="text-sm opacity-90 mt-1">Read a passage, answer MCAS-style questions, and get feedback on your writing.</p>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-black">{reading.passages_done}/{reading.passages_total}</div>
+            <div className="text-xs opacity-80">passages read</div>
+          </div>
+        </button>
+      )}
+
       {/* Subject cards */}
       <h2 className="text-lg font-semibold text-slate-700 mb-4">Choose a Subject</h2>
       {subjects.length === 0 ? (
@@ -68,9 +88,20 @@ export default function Home() {
           No subjects yet. Run <code className="text-sm bg-slate-100 px-1 rounded">python seed_data.py</code> in the backend folder.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {subjects.map(s => <SubjectCard key={s.id} subject={s} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {subjects.filter(s => !s.archived).map(s => <SubjectCard key={s.id} subject={s} />)}
+          </div>
+          {subjects.some(s => s.archived) && (
+            <>
+              <h2 className="text-lg font-semibold text-slate-700 mt-10 mb-1">Review: 7th Grade</h2>
+              <p className="text-sm text-slate-400 mb-4">You finished these — come back any time to refresh.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 opacity-80">
+                {subjects.filter(s => s.archived).map(s => <SubjectCard key={s.id} subject={s} />)}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   )

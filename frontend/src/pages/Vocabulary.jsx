@@ -97,7 +97,9 @@ export default function Vocabulary() {
             style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
             className="absolute inset-0 bg-white rounded-2xl border-2 border-purple-200 shadow-md flex flex-col items-center justify-center p-8"
           >
-            <p className="text-xs uppercase tracking-widest text-purple-400 mb-6 font-medium">Vocabulary Word</p>
+            <p className="text-xs uppercase tracking-widest text-purple-400 mb-6 font-medium">
+              {word.level === 'level_up' ? '🚀 Level Up Word · Grade 9' : 'Vocabulary Word'}
+            </p>
             <p className="text-4xl font-bold text-slate-800 text-center leading-tight">{word.word}</p>
             {word.part_of_speech && (
               <p className="mt-5 text-sm text-slate-400 italic">{word.part_of_speech}</p>

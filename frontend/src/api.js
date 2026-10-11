@@ -20,12 +20,18 @@ export const api = {
   getSubjects: () => get('/subjects'),
   getTopics: (subjectId) => get(`/subjects/${subjectId}/topics`),
   getLessons: (topicId) => get(`/topics/${topicId}/lessons`),
-  getQuestions: (topicId) => get(`/topics/${topicId}/questions`),
-  saveQuizAttempt: (topicId, score, total) =>
-    post('/quiz-attempts', { topic_id: topicId, score, total }),
+  getQuestions: (topicId, level = 'core') => get(`/topics/${topicId}/questions?level=${level}`),
+  saveQuizAttempt: (topicId, score, total, level = 'core', answers = null) =>
+    post('/quiz-attempts', { topic_id: topicId, score, total, level, answers }),
   markLessonComplete: (topicId, lessonId) =>
     post(`/topics/${topicId}/lesson-progress`, { lesson_id: lessonId }),
   getProgress: () => get('/progress'),
   getSubjectProgress: () => get('/progress/subjects'),
   getVocabulary: (topicId) => get(`/topics/${topicId}/vocabulary`),
+  getPassages: () => get('/passages'),
+  getPassage: (passageId) => get(`/passages/${passageId}`),
+  savePassageAttempt: (passageId, score, total, answers) =>
+    post('/passage-attempts', { passage_id: passageId, score, total, answers }),
+  gradeWritten: (attemptId, answer) => post(`/passage-attempts/${attemptId}/written`, { answer }),
+  getReadingProgress: () => get('/reading-progress'),
 }

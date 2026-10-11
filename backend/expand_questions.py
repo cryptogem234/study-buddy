@@ -22,6 +22,7 @@ Requires backend/.env:
     ANTHROPIC_API_KEY=sk-ant-...
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
@@ -99,6 +100,13 @@ if a condition changed, which explanation fits the evidence.
 - Use original lab or everyday scenarios. When data is needed, describe it in the \
 stem as short text (e.g. "Trial 1: 20 g ... Trial 2: 35 g ...") since no images \
 can be shown.
+- Include experimental-design questions (variables, controls, fair tests).""",
+    ),
+    "Physics": (
+        "Physics", 8, "claude-opus-5-5", "NGSS MS-PS2, MS-PS3, MS-PS4 (Grade 8)",
+        SCIENCE_SKILLS,
+        """- Favor understanding over memorization: why objects move as they do, how energy changes form, what evidence supports an explanation.
+- Include short calculations with friendly numbers where the topic allows it (speed, F = ma, energy, waves), and describe any data as short text since no images can be shown.
 - Include experimental-design questions (variables, controls, fair tests).""",
     ),
     "Biology": (
@@ -484,6 +492,90 @@ def cmd_generate(args):
         print(f"Total API cost: ${spend.total:.2f}")
 
 
+LEVEL_UP_TARGET = 8
+
+
+def cmd_levelup(args):
+    """Top up each topic's Level Up (challenge) pool to 8 questions, based on its Level Up section."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise SystemExit("ERROR: ANTHROPIC_API_KEY not found in backend/.env")
+    client = anthropic.Anthropic()
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        """select t.id, t.name, t.unit, s.name, s.grade, l.content, l.extras,
+                  (select count(*) from questions q where q.topic_id = t.id and q.difficulty = 'challenge')
+           from topics t join subjects s on s.id = t.subject_id join lessons l on l.topic_id = t.id
+           where t.hidden = 0 order by s.position, t."order" """
+    ).fetchall()
+    if args.subject:
+        name, grade = SUBJECT_CONFIG[args.subject][:2]
+        rows = [r for r in rows if r[3] == name and r[4] == grade]
+    jobs = []
+    for tid, name, unit, subj, grade, content, extras_json, have in rows:
+        slug = next((k for k, c in SUBJECT_CONFIG.items() if c[0] == subj and c[1] == grade), None)
+        if not slug or have >= LEVEL_UP_TARGET:
+            continue
+        extras = json.loads(extras_json) if extras_json else None
+        if not extras or not extras.get("level_up"):
+            print(f"Skipping '{name}' — no Level Up section yet.")
+            continue
+        existing = [r[0] for r in conn.execute("select stem from questions where topic_id = ?", (tid,))]
+        jobs.append((tid, name, unit, subj, grade, content, extras["level_up"], LEVEL_UP_TARGET - have, existing, slug))
+
+    def run(job):
+        tid, name, unit, subj, grade, content, lu, need, existing, slug = job
+        _, _, model, standard, skills, guidance = SUBJECT_CONFIG[slug]
+        lesson = f"{content}\n\n## Level Up (Grade 9): {lu['title']} ({lu['standard']})\n\n{lu['content']}"
+        system = [{
+            "type": "text",
+            "text": SYSTEM_TEMPLATE.format(
+                standard=standard, topic=name, unit=unit, guidance=guidance,
+                skills=", ".join(skills), lesson=lesson,
+            ) + "\n\nAll questions in this request are challenge level and should test the "
+                "Level Up (Grade 9) section at the end of the lesson.",
+            "cache_control": {"type": "ephemeral"},
+        }]
+        spend = Spend(None)  # per topic; the overall budget is checked as topics finish
+        kept = []
+        for _ in range(2):  # a second round replaces questions the verifier rejected
+            n = need - len(kept)
+            if n <= 0:
+                break
+            for size in [min(5, n)] + ([n - 5] if n > 5 else []):
+                batch = generate_batch(client, spend, model, system, size, {"challenge": size}, skills,
+                                       existing + [q["stem"] for q in kept])
+                kept += [q for q in verify(client, spend, batch) if q["verified"]]
+        return kept[:need], spend.total
+
+    total, added_total = 0.0, 0
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(run, job): job for job in jobs}
+        for fut in as_completed(futures):
+            tid, name, *_ , subj, grade = futures[fut][:5]
+            try:
+                kept, cost = fut.result()
+            except Exception as e:
+                print(f"{subj} {grade}: {name} ... FAILED — {e}", flush=True)
+                continue
+            with conn:
+                conn.executemany(
+                    "insert into questions (topic_id, stem, options, correct_index, explanation, skill, difficulty)"
+                    " values (?, ?, ?, ?, ?, ?, 'challenge')",
+                    [(tid, q["stem"], json.dumps(q["options"], ensure_ascii=False), q["correct_index"],
+                      q["explanation"], q["skill"]) for q in kept],
+                )
+            total += cost
+            added_total += len(kept)
+            print(f"{subj} {grade}: {name} ... added {len(kept)}, ${cost:.2f} (total ${total:.2f})", flush=True)
+            if total > args.budget:
+                print(f"\nSTOPPED — spent ${total:.2f}, over the ${args.budget:.2f} budget", flush=True)
+                for f in futures:
+                    f.cancel()
+                break
+    print(f"\nAdded {added_total} Level Up questions. Total API cost: ${total:.2f}", flush=True)
+    conn.close()
+
+
 def cmd_save(args):
     results = json.loads(Path(args.file).read_text(encoding="utf-8"))
     backup = DB_PATH.with_name(f"study_buddy.backup-{datetime.now():%Y%m%d-%H%M%S}.db")
@@ -527,8 +619,12 @@ def main():
     g.add_argument("--budget", type=float, default=None, help="stop if API cost exceeds this many dollars")
     s = sub.add_parser("save")
     s.add_argument("file")
+    lu = sub.add_parser("levelup")
+    lu.add_argument("--budget", type=float, required=True)
+    lu.add_argument("--subject", choices=SUBJECT_CONFIG)
+    lu.add_argument("--workers", type=int, default=6)
     args = parser.parse_args()
-    {"generate": cmd_generate, "save": cmd_save}[args.cmd](args)
+    {"generate": cmd_generate, "save": cmd_save, "levelup": cmd_levelup}[args.cmd](args)
 
 
 if __name__ == "__main__":

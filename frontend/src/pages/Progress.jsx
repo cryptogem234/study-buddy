@@ -14,6 +14,64 @@ const TREND_STYLE = {
   flat: { icon: '▬', text: 'text-slate-400' },
 }
 
+const SKILL_LABELS = {
+  central_idea: 'Central idea / theme',
+  inference: 'Inference',
+  textual_evidence: 'Text evidence',
+  vocabulary_in_context: 'Vocabulary in context',
+  author_purpose: "Author's purpose",
+  text_structure: 'Text structure',
+  point_of_view: 'Point of view',
+  figurative_language: 'Figurative language',
+  argument_rhetoric: 'Argument & rhetoric',
+  character_plot: 'Character & plot',
+}
+
+function ReadingCard({ reading, onOpen }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
+      <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+        <h2 className="text-lg font-semibold text-slate-700">📖 Reading Comprehension</h2>
+        <button onClick={onOpen} className="text-sm text-brand-600 hover:underline">Go to Reading →</button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        {[
+          { label: 'Passages read', value: `${reading.passages_done}/${reading.passages_total}` },
+          { label: 'Passed (80%+)', value: reading.passages_passed },
+          { label: 'Avg question score', value: reading.average_score != null ? `${Math.round(reading.average_score)}%` : '—' },
+          { label: 'Writing avg', value: reading.written_average != null ? `${reading.written_average.toFixed(1)}/4` : '—' },
+        ].map(s => (
+          <div key={s.label} className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="text-xl font-bold text-slate-800">{s.value}</div>
+            <div className="text-xs text-slate-500">{s.label}</div>
+          </div>
+        ))}
+      </div>
+      {reading.skills.length > 0 ? (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Reading skills (weakest first)</p>
+          <div className="space-y-2">
+            {reading.skills.map(sk => {
+              const pct = Math.round((sk.correct / sk.total) * 100)
+              return (
+                <div key={sk.skill} className="flex items-center gap-3 text-sm">
+                  <span className="w-44 shrink-0 text-slate-600">{SKILL_LABELS[sk.skill] ?? sk.skill}</span>
+                  <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${pct >= 80 ? 'bg-green-400' : pct >= 60 ? 'bg-yellow-400' : 'bg-red-300'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-20 text-right text-xs text-slate-500">{pct}% ({sk.correct}/{sk.total})</span>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <p className="text-sm text-slate-400">Skill breakdown appears after the first passage.</p>
+      )}
+    </div>
+  )
+}
+
 function fmt(dt) {
   return new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -24,11 +82,12 @@ export default function Progress() {
   const [subjects, setSubjects] = useState([])
   const [expanded, setExpanded] = useState({})
   const [historyOpen, setHistoryOpen] = useState({})
+  const [reading, setReading] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([api.getProgress(), api.getSubjectProgress()])
-      .then(([s, sp]) => { setSummary(s); setSubjects(sp) })
+    Promise.all([api.getProgress(), api.getSubjectProgress(), api.getReadingProgress()])
+      .then(([s, sp, r]) => { setSummary(s); setSubjects(sp); setReading(r) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -56,10 +115,17 @@ export default function Progress() {
         ))}
       </div>
 
+      {reading?.passages_total > 0 && <ReadingCard reading={reading} onOpen={() => navigate('/reading')} />}
+
       {/* Per-subject topic breakdown */}
-      <h2 className="text-lg font-semibold text-slate-700 mb-4">Topics by Subject</h2>
+      {[
+        { title: 'Topics by Subject', list: subjects.filter(s => !s.archived) },
+        { title: 'Review: 7th Grade', list: subjects.filter(s => s.archived) },
+      ].filter(g => g.list.length > 0).map(group => (
+      <div key={group.title}>
+      <h2 className="text-lg font-semibold text-slate-700 mb-4">{group.title}</h2>
       <div className="space-y-4 mb-8">
-        {subjects.map(subj => {
+        {group.list.map(subj => {
           const isOpen = expanded[subj.subject_id] ?? false
           const pct = subj.total_count > 0 ? Math.round((subj.completed_count / subj.total_count) * 100) : 0
 
@@ -73,7 +139,10 @@ export default function Progress() {
                 <span className="text-2xl">{subj.icon}</span>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-slate-800">{subj.subject_name}</div>
-                  <div className="text-xs text-slate-400">Grade {subj.grade} · {subj.completed_count}/{subj.total_count} topics complete</div>
+                  <div className="text-xs text-slate-400">
+                    Grade {subj.grade} · {subj.completed_count}/{subj.total_count} topics complete
+                    {subj.level_up_total > 0 && <> · ⭐ {subj.level_up_passed_count}/{subj.level_up_total} Level Up</>}
+                  </div>
                   <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden w-full">
                     <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
@@ -95,7 +164,10 @@ export default function Progress() {
                           onClick={() => navigate(`/topics/${t.topic_id}/lesson`)}>
                           <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm text-slate-700 truncate">{t.topic_name}</p>
+                            <p className="text-sm text-slate-700 truncate">
+                              {t.topic_name}
+                              {t.level_up_passed && <span className="ml-1" title="Level Up star (Grade 9)">⭐</span>}
+                            </p>
                             <p className="text-xs text-slate-400">Term {t.term} · {t.unit}</p>
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
@@ -125,7 +197,10 @@ export default function Progress() {
                                 const pct = Math.round((a.score / a.total) * 100)
                                 return (
                                   <li key={a.id} className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1.5">
-                                    <span>{fmt(a.attempted_at)}</span>
+                                    <span>
+                                      {fmt(a.attempted_at)}
+                                      {a.level === 'level_up' && <span className="ml-2 font-semibold text-orange-500">🚀 Level Up</span>}
+                                    </span>
                                     <span className={`font-semibold ${pct >= 80 ? 'text-green-600' : pct >= 60 ? 'text-amber-600' : 'text-red-400'}`}>
                                       {a.score}/{a.total} · {pct}%
                                     </span>
@@ -144,6 +219,9 @@ export default function Progress() {
           )
         })}
       </div>
+
+      </div>
+      ))}
 
       {/* Recent quiz history */}
       {summary?.recent_attempts?.length > 0 && (

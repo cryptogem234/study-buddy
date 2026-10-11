@@ -18,6 +18,7 @@ export default function Layout() {
           </div>
           <nav className="flex gap-2">
             <NavLink to="/" end className={navClass}>Home</NavLink>
+            <NavLink to="/reading" className={navClass}>Reading</NavLink>
             <NavLink to="/progress" className={navClass}>Progress</NavLink>
           </nav>
         </div>
