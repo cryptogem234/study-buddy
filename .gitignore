@@ -6,3 +6,8 @@ backend/.env
 node_modules/
 dist/
 .claude/
+
+# Local working files
+backend/study_buddy.backup-*.db
+backend/study_buddy_aashi.db
+backend/generated/

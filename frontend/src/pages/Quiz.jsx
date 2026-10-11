@@ -104,7 +104,7 @@ export default function Quiz() {
                 <span className={`mt-0.5 text-lg ${a.correct ? 'text-green-500' : 'text-red-400'}`}>
                   {a.correct ? '✓' : '✗'}
                 </span>
-                <p className="font-medium text-slate-800 text-sm leading-relaxed">{a.q.stem}</p>
+                <p className="font-medium text-slate-800 text-sm leading-relaxed whitespace-pre-line">{a.q.stem}</p>
               </div>
               <div className="space-y-1.5 ml-6">
                 {a.q.options.map((opt, oi) => {
@@ -218,7 +218,7 @@ export default function Quiz() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-        <p className="text-lg font-semibold text-slate-800 mb-6 leading-relaxed">{q.stem}</p>
+        <p className="text-lg font-semibold text-slate-800 mb-6 leading-relaxed whitespace-pre-line">{q.stem}</p>
         <div className="space-y-3">
           {q.options.map((opt, i) => {
             let cls = 'w-full text-left px-5 py-4 rounded-xl border-2 font-medium transition-all text-slate-700 '
