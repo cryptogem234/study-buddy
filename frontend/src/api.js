@@ -1,4 +1,5 @@
-const BASE = ''  // proxied through Vite to localhost:8000
+// Talk to the backend directly so the app doesn't depend on the dev server's proxy list
+const BASE = `http://${window.location.hostname}:8000`
 
 async function get(path) {
   const res = await fetch(BASE + path)
