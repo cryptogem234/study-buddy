@@ -1,16 +1,24 @@
 """Grades a written reading response with Claude against the passage's rubric.
 
-Returns None when grading is unavailable (no API key on this computer, or the
-request fails), so the page can fall back to showing the model answer.
+Returns None when grading is unavailable (no API key or no anthropic package on
+this computer, or the request fails), so the page can fall back to showing the
+model answer. The imports are optional so the app always starts, even on a
+computer that only has the packages needed to run it.
 """
 import json
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-import anthropic
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
 
-load_dotenv(Path(__file__).parent / ".env")
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
 
 MODEL = "claude-sonnet-5-5"
 
@@ -42,7 +50,7 @@ the passage when possible. Do not rewrite her answer for her."""
 
 
 def grade(passage_text: str, prompt: str, rubric: list[str], model_answer: str, answer: str) -> dict | None:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     user = (
         f"<passage>\n{passage_text}\n</passage>\n\n"

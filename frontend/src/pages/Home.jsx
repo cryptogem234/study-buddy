@@ -8,16 +8,29 @@ export default function Home() {
   const [progress, setProgress] = useState(null)
   const [reading, setReading] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [serverDown, setServerDown] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
-    Promise.all([api.getSubjects(), api.getProgress(), api.getReadingProgress()])
-      .then(([s, p, r]) => { setSubjects(s); setProgress(p); setReading(r) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    // Load each part separately so one failing request can't blank the whole page
+    Promise.all([
+      api.getSubjects().then(setSubjects).catch(() => setServerDown(true)),
+      api.getProgress().then(setProgress).catch(() => {}),
+      api.getReadingProgress().then(setReading).catch(() => {}),
+    ]).finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="text-center py-20 text-slate-400">Loading...</div>
+  if (serverDown) return (
+    <div className="max-w-lg mx-auto text-center py-20">
+      <p className="text-4xl mb-4">🔌</p>
+      <p className="text-slate-700 font-semibold mb-2">Study Buddy can't reach its server.</p>
+      <p className="text-slate-500 text-sm">
+        Close this page, double-click <b>StopStudyBuddy.bat</b>, then <b>StudyBuddy.vbs</b> to restart.
+        If this keeps happening, the backend is failing to start — run it in a terminal to see why.
+      </p>
+    </div>
+  )
 
   const streak = progress?.current_streak ?? 0
   const lessonsDone = progress?.lessons_completed ?? 0
@@ -85,7 +98,7 @@ export default function Home() {
       <h2 className="text-lg font-semibold text-slate-700 mb-4">Choose a Subject</h2>
       {subjects.length === 0 ? (
         <div className="text-center py-20 text-slate-400">
-          No subjects yet. Run <code className="text-sm bg-slate-100 px-1 rounded">python seed_data.py</code> in the backend folder.
+          No subjects found. Make sure <code className="text-sm bg-slate-100 px-1 rounded">backend\study_buddy.db</code> was copied and Study Buddy was restarted.
         </div>
       ) : (
         <>

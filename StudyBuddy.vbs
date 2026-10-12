@@ -5,7 +5,7 @@ ROOT = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\"))
 Set WshShell = CreateObject("WScript.Shell")
 
 ' Start backend — hidden window
-WshShell.Run "cmd /c cd /d """ & ROOT & "backend"" && """ & ROOT & "venv\Scripts\uvicorn.exe"" main:app --port 8000", 0, False
+WshShell.Run "cmd /c cd /d """ & ROOT & "backend"" && """ & ROOT & "venv\Scripts\uvicorn.exe"" main:app --port 8000 > server.log 2>&1", 0, False
 
 ' Wait for backend to be ready
 WScript.Sleep 4000

@@ -11,3 +11,4 @@ dist/
 backend/study_buddy.backup-*.db
 backend/study_buddy_aashi.db
 backend/generated/
+backend/server.log
